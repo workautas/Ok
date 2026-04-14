@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workout Tracker AI</title>
+
+<style>
+body {font-family: Arial;background:#121212;color:#e0e0e0;max-width:800px;margin:auto;padding:20px;}
+#coach {margin-bottom:15px;padding:10px;border:2px solid #666;background:#1e1e1e;}
+#topbar{display:grid;grid-template-columns:auto 1fr auto;align-items:center;margin-bottom:10px;gap:10px}
+#calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;}
+.day{border:1px solid #333;aspect-ratio:1/1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;font-size:10px;cursor:pointer;background:#1e1e1e;}
+.summary{display:grid;font-size:10px;}
+.today{border:2px solid #4da3ff;}
+.selected{outline:2px solid #fff;}
+#infoBox{border:1px solid #333;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;font-size:16px;width:40px;cursor:pointer;}
+#panel{margin-top:20px;padding:10px;border:2px solid #444;background:#1e1e1e;}
+input{
+  width:90px;
+  font-size:16px;
+  margin-left:15px;
+  background:#2a2a2a;
+  color:#ffffff;
+  border:1px solid #555;
+  border-radius:4px;
+  padding:4px;
+}
+#popup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1e1e1e;padding:20px;border:2px solid #555;display:none;width:300px;}
+#closePopup{position:absolute;top:5px;right:10px;cursor:pointer;}
+button{background:#333;color:white;border:none;padding:5px 10px;cursor:pointer}
+</style>
+</head>
+
+<body>
+
+<h2>Workout Tracker</h2>
+<div id="coach"></div>
+
+<div id="topbar">
+<button onclick="changeMonth(-1)">←</button>
+<div id="monthLabel"></div>
+<div style="display:flex;gap:5px;align-items:center">
+<button onclick="changeMonth(1)">→</button>
+<div id="infoBox" onclick="openPopup()">?</div>
+</div>
+</div>
+
+<div id="calendar"></div>
+
+<div id="popup">
+<div id="closePopup" onclick="closePopup()">X</div>
+<b>System Explanation</b><br><br>
+Efficiency = last 7 day peak vs total work.<br><br>
+PR = best ever performance.<br><br>
+Total = accumulated reps.
+</div>
+
+<div id="panel" style="display:none;">
+<h3 id="date"></h3>
+Pullups <input id="pullups" type="number"><br>
+Pushups <input id="pushups" type="number"><br>
+Squats <input id="squats" type="number"><br>
+<button onclick="save()">Save</button>
+</div>
+
+<script>
+const cal=document.getElementById("calendar");
+const coach=document.getElementById("coach");
+const monthLabel=document.getElementById("monthLabel");
+
+let currentDate=new Date();
+let selectedDate=null;
+let selectedEl=null;
+
+function getData(){return JSON.parse(localStorage.getItem("d")||"{}");}
+function setData(d){localStorage.setItem("d",JSON.stringify(d));}
+
+// FIXED DATE (no timezone bugs)
+function formatDate(date){
+ const y=date.getFullYear();
+ const m=String(date.getMonth()+1).padStart(2,'0');
+ const d=String(date.getDate()).padStart(2,'0');
+ return `${y}-${m}-${d}`;
+}
+
+function changeMonth(offset){
+ currentDate.setMonth(currentDate.getMonth()+offset);
+ loadCalendar();
+}
+
+function loadCalendar(){
+ cal.innerHTML="";
+
+ const year=currentDate.getFullYear();
+ const month=currentDate.getMonth();
+
+ monthLabel.innerText=currentDate.toLocaleString('default',{month:'short'})+" "+year;
+
+ let firstDay=new Date(year,month,1).getDay();
+ firstDay=(firstDay===0)?6:firstDay-1;
+
+ const daysInMonth=new Date(year,month+1,0).getDate();
+ const data=getData();
+
+ const today=new Date();
+ const todayKey=formatDate(today);
+
+ for(let i=0;i<firstDay;i++) cal.innerHTML+="<div></div>";
+
+ for(let d=1;d<=daysInMonth;d++){
+  const date=new Date(year,month,d);
+  const key=formatDate(date);
+  const entry=data[key]||{};
+
+  const div=document.createElement("div");
+  div.className="day";
+
+  const score=(entry.pullups||0)+(entry.pushups||0)*0.75+(entry.squats||0)*0.5;
+
+  if(score===0) div.style.background="#1e1e1e";
+  else if(score<=15) div.style.background="#1b5e20";
+  else if(score<=35) div.style.background="#9e7b00";
+  else if(score<=70) div.style.background="#c25a00";
+  else div.style.background="#b71c1c";
+
+  let content=`<div>${d}</div>`;
+
+  if(entry.pullups||entry.pushups||entry.squats){
+    content+=`<div class="summary"><div>${entry.pullups||0} | ${entry.pushups||0}</div><div>${entry.squats||0}</div></div>`;
+  }
+
+  if(key===todayKey) div.classList.add("today");
+
+  div.innerHTML=content;
+
+  div.onclick=()=>{
+    selectedDate=key;
+
+    if(selectedEl) selectedEl.classList.remove("selected");
+    div.classList.add("selected");
+    selectedEl=div;
+
+    document.getElementById("panel").style.display="block";
+    document.getElementById("date").innerText=key;
+
+    pullups.value=entry.pullups||"";
+    pushups.value=entry.pushups||"";
+    squats.value=entry.squats||"";
+  };
+
+  cal.appendChild(div);
+ }
+
+ renderCoach();
+}
+
+function save(){
+ if(!selectedDate) return;
+ const data=getData();
+
+ data[selectedDate]={
+  pullups:+pullups.value||0,
+  pushups:+pushups.value||0,
+  squats:+squats.value||0
+ };
+
+ setData(data);
+ loadCalendar();
+}
+
+function getPR(data){let p=0,u=0,s=0;for(let k in data){p=Math.max(p,data[k].pullups||0);u=Math.max(u,data[k].pushups||0);s=Math.max(s,data[k].squats||0);}return{p,u,s};}
+function getTotals(data){let p=0,u=0,s=0;for(let k in data){p+=data[k].pullups||0;u+=data[k].pushups||0;s+=data[k].squats||0;}return{p,u,s};}
+
+function getEfficiency(data){
+ let total=getTotals(data);
+ let recent={p:0,u:0,s:0};
+ let d=new Date();
+
+ for(let i=0;i<7;i++){
+  let e=data[formatDate(d)]||{};
+  recent.p=Math.max(recent.p,e.pullups||0);
+  recent.u=Math.max(recent.u,e.pushups||0);
+  recent.s=Math.max(recent.s,e.squats||0);
+  d.setDate(d.getDate()-1);
+ }
+
+ return{
+  p:(recent.p/(total.p||1)*100).toFixed(2),
+  u:(recent.u/(total.u||1)*100).toFixed(2),
+  s:(recent.s/(total.s||1)*100).toFixed(2)
+ };
+}
+
+function renderCoach(){
+ let data=getData();
+ let pr=getPR(data);
+ let t=getTotals(data);
+ let e=getEfficiency(data);
+
+ coach.innerHTML=`<b>PR & Total</b><br>
+ Pullups: ${pr.p} (${t.p})<br>
+ Pushups: ${pr.u} (${t.u})<br>
+ Squats: ${pr.s} (${t.s})<br><br>
+ <b>Efficiency</b><br>
+ Pullups: ${e.p}%<br>
+ Pushups: ${e.u}%<br>
+ Squats: ${e.s}%`;
+}
+
+function openPopup(){document.getElementById("popup").style.display="block";}
+function closePopup(){document.getElementById("popup").style.display="none";}
+
+loadCalendar();
+</script>
+
+</body>
+</html>
